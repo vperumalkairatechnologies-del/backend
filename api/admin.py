@@ -346,16 +346,68 @@ def platform_analytics(identity):
             )
             views_7d = int(cur.fetchone()["count"])
 
+            try:
+                cur.execute(
+                    "SELECT COUNT(*) as count FROM cards WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+                )
+                new_cards_7d = int(cur.fetchone()["count"])
+            except Exception:
+                new_cards_7d = 0
+
         return json_resp(200, {
             "total_cards":  total_cards,
             "total_users":  total_users,
-            "total_views":  total_views,   # ← was hardcoded 0
-            "total_leads":  total_leads,   # ← was hardcoded 0
+            "total_views":  total_views,
+            "total_leads":  total_leads,
             "new_users_7d": new_users_7d,
+            "new_cards_7d": new_cards_7d,
             "views_7d":     views_7d,
         })
     except Exception:
         logger.exception("platform_analytics failed")
         return json_error(500, "Failed to fetch analytics.")
+    finally:
+        db.close()
+
+
+# GET /api/admin/feature-limits
+@admin_bp.route("/feature-limits", methods=["GET"])
+@require_admin
+def get_feature_limits(identity):
+    db = get_db()
+    try:
+        with db.cursor() as cur:
+            cur.execute("SELECT * FROM feature_limits ORDER BY plan_type, feature_name")
+            limits = cur.fetchall()
+        return json_resp(200, {"limits": limits})
+    except Exception:
+        logger.exception("get_feature_limits failed")
+        return json_error(500, "Failed to fetch feature limits.")
+    finally:
+        db.close()
+
+
+# PUT /api/admin/feature-limits
+@admin_bp.route("/feature-limits", methods=["PUT"])
+@require_admin
+def update_feature_limits(identity):
+    admin_id = int(identity["user_id"])
+    body = request.get_json(silent=True) or {}
+    limits = body.get("limits", [])
+    if not limits:
+        return json_error(400, "No limits provided.")
+    db = get_db()
+    try:
+        with db.cursor() as cur:
+            for item in limits:
+                cur.execute(
+                    "UPDATE feature_limits SET limit_value=%s, is_enabled=%s WHERE plan_type=%s AND feature_name=%s",
+                    (item.get("limit_value"), int(item.get("is_enabled", 1)), item["plan_type"], item["feature_name"])
+                )
+        log_admin_action(admin_id, "feature_limits_updated", None, json.dumps(limits))
+        return json_resp(200, {"message": "Feature limits updated."})
+    except Exception:
+        logger.exception("update_feature_limits failed")
+        return json_error(500, "Failed to update feature limits.")
     finally:
         db.close()

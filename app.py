@@ -99,6 +99,25 @@ app.register_blueprint(analytics_bp,  url_prefix="/api/analytics")
 app.register_blueprint(premium_bp,    url_prefix="/api/premium")
 app.register_blueprint(admin_bp,      url_prefix="/api/admin")
 
+# ── Auto-migrate: add max_cards column if missing ────────────────────────────
+def _run_migrations():
+    try:
+        from config.db import get_db
+        db = get_db()
+        with db.cursor() as cur:
+            cur.execute("""
+                SELECT COUNT(*) as cnt FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'max_cards'
+            """)
+            if cur.fetchone()["cnt"] == 0:
+                cur.execute("ALTER TABLE users ADD COLUMN max_cards INT DEFAULT NULL")
+                logger.info("Migration: added max_cards column to users table")
+        db.close()
+    except Exception as e:
+        logger.warning("Migration failed (non-fatal): %s", e)
+
+_run_migrations()
+
 if __name__ == "__main__":
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
     app.run(debug=debug, port=8000)
