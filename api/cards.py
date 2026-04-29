@@ -74,6 +74,38 @@ def _save_links(db, card_id: int, links: list):
                 )
 
 
+# ── Public: GET /api/cards/public/id/<card_id> ──────────────────────────────
+@cards_bp.route("/public/id/<int:card_id>", methods=["GET"])
+def public_card_by_id(card_id):
+    db = get_db()
+    try:
+        with db.cursor() as cur:
+            cur.execute(
+                """SELECT u.name, u.email, u.slug, c.id, c.title, c.company,
+                          c.bio, c.photo, c.theme
+                   FROM users u
+                   JOIN cards c ON c.user_id = u.id
+                   WHERE c.id = %s AND c.is_active = 1""",
+                (card_id,),
+            )
+            card = cur.fetchone()
+        if not card:
+            return json_error(404, "Card not found.")
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT type, label, url FROM card_links "
+                "WHERE card_id = %s ORDER BY sort_order ASC",
+                (card["id"],),
+            )
+            card["links"] = cur.fetchall()
+        return json_resp(200, {"card": card})
+    except Exception:
+        logger.exception("public_card_by_id failed for card_id=%s", card_id)
+        return json_error(500, "Failed to fetch card.")
+    finally:
+        db.close()
+
+
 # ── Public: GET /api/cards/public/<slug> ─────────────────────────────────────
 @cards_bp.route("/public/<slug>", methods=["GET"])
 def public_card(slug):
