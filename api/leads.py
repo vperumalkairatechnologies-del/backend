@@ -38,13 +38,20 @@ def capture_lead():
     db = get_db()
     try:
         with db.cursor() as cur:
-            cur.execute(
-                """SELECT c.id FROM cards c
-                   JOIN users u ON u.id = c.user_id
-                   WHERE u.slug = %s AND c.is_active = 1
-                   LIMIT 1""",
-                (slug,),
-            )
+            # Support both slug (user slug) and numeric cardId
+            if slug.isdigit():
+                cur.execute(
+                    "SELECT id FROM cards WHERE id = %s AND is_active = 1 LIMIT 1",
+                    (int(slug),),
+                )
+            else:
+                cur.execute(
+                    """SELECT c.id FROM cards c
+                       JOIN users u ON u.id = c.user_id
+                       WHERE u.slug = %s AND c.is_active = 1
+                       LIMIT 1""",
+                    (slug,),
+                )
             card = cur.fetchone()
             if not card:
                 return json_error(404, "Card not found.")
