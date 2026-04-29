@@ -246,19 +246,13 @@ def create_card(identity):
     try:
         # Check user's card limit based on their plan
         with db.cursor() as cur:
-            cur.execute("SELECT role FROM users WHERE id = %s", (user_id,))
+            cur.execute("SELECT role, COALESCE(max_cards, CASE WHEN role='admin' THEN 50 WHEN role='premium' THEN 10 ELSE 1 END) as max_cards FROM users WHERE id = %s", (user_id,))
             user = cur.fetchone()
-            
+
             cur.execute("SELECT COUNT(*) as count FROM cards WHERE user_id = %s", (user_id,))
             card_count = cur.fetchone()["count"]
-            
-            # Apply limits based on user role
-            max_cards = 1  # Default for free users
-            if user and user["role"] == "premium":
-                max_cards = 10  # Premium users can have up to 10 cards
-            elif user and user["role"] == "admin":
-                max_cards = 50  # Admin users can have up to 50 cards
-                
+
+            max_cards = int(user["max_cards"]) if user else 1
             if card_count >= max_cards:
                 return json_error(429, f"Card limit reached. You can have maximum {max_cards} cards.")
         

@@ -113,7 +113,8 @@ def list_users(identity):
 
             cur.execute(
                 f"""SELECT id, name, email, slug, role, plan_status,
-                           premium_requested_at, premium_approved_at, created_at
+                           premium_requested_at, premium_approved_at, created_at,
+                           COALESCE(max_cards, CASE WHEN role='admin' THEN 50 WHEN role='premium' THEN 10 ELSE 1 END) as max_cards
                     FROM users WHERE {where}
                     ORDER BY created_at DESC
                     LIMIT %s OFFSET %s""",
@@ -271,6 +272,9 @@ def update_user(identity):
     if "is_active" in body:
         updates.append("is_active = %s")
         params.append(int(bool(body["is_active"])))
+    if "max_cards" in body and isinstance(body["max_cards"], int) and body["max_cards"] >= 0:
+        updates.append("max_cards = %s")
+        params.append(body["max_cards"])
 
     if not updates:
         return json_error(400, "No valid fields to update.")
