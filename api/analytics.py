@@ -1,4 +1,5 @@
 import logging
+import threading
 from datetime import date, timedelta
 
 from flask import Blueprint, request
@@ -9,6 +10,20 @@ logger = logging.getLogger(__name__)
 analytics_bp = Blueprint("analytics", __name__)
 
 
+def _write_view(card_id, ip, user_agent):
+    """Write view to DB in background thread — non-blocking."""
+    try:
+        db = get_db()
+        with db.cursor() as cur:
+            cur.execute(
+                "INSERT INTO card_views (card_id, visitor_ip, user_agent) VALUES (%s, %s, %s)",
+                (card_id, ip, user_agent),
+            )
+        db.close()
+    except Exception:
+        logger.exception("background _write_view failed card_id=%s", card_id)
+
+
 # POST /api/analytics/view — public, no auth required
 @analytics_bp.route("/view", methods=["POST"])
 def log_view():
@@ -17,27 +32,13 @@ def log_view():
     if not card_id:
         return json_error(400, "card_id is required.")
 
-    db = get_db()
-    try:
-        with db.cursor() as cur:
-            cur.execute("SELECT id FROM cards WHERE id = %s AND is_active = 1", (card_id,))
-            if not cur.fetchone():
-                return json_error(404, "Card not found.")
+    ip         = request.headers.get("X-Forwarded-For", request.remote_addr or "")
+    ip         = ip.split(",")[0].strip()[:45]
+    user_agent = (request.user_agent.string or "")[:500]
 
-            ip         = request.headers.get("X-Forwarded-For", request.remote_addr or "")
-            ip         = ip.split(",")[0].strip()[:45]
-            user_agent = (request.user_agent.string or "")[:500]
-
-            cur.execute(
-                "INSERT INTO card_views (card_id, visitor_ip, user_agent) VALUES (%s, %s, %s)",
-                (card_id, ip, user_agent),
-            )
-        return json_resp(201, {"message": "View logged."})
-    except Exception:
-        logger.exception("log_view failed card_id=%s", card_id)
-        return json_error(500, "Failed to log view.")
-    finally:
-        db.close()
+    # Fire and forget — don't block the response
+    threading.Thread(target=_write_view, args=(card_id, ip, user_agent), daemon=True).start()
+    return json_resp(201, {"message": "View logged."})
 
 
 # GET /api/analytics?card_id=<id>
