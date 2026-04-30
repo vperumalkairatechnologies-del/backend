@@ -6,8 +6,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from flask import Flask, request, make_response
+from flask import Flask, request, make_response, Response
 from flask_jwt_extended import JWTManager
+from flask_compress import Compress
 
 from api.auth import auth_bp
 from api.cards import cards_bp
@@ -50,6 +51,10 @@ app.config["UPLOAD_FOLDER"] = os.path.join(
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5 MB
 
 JWTManager(app)
+Compress(app)
+app.config['COMPRESS_MIMETYPES'] = ['application/json', 'text/plain']
+app.config['COMPRESS_LEVEL'] = 6
+app.config['COMPRESS_MIN_SIZE'] = 500
 
 # ── CORS (strict allowlist) ───────────────────────────────────────────────────
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")

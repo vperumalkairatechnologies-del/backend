@@ -4,9 +4,10 @@ import os
 import struct
 import uuid
 
-from flask import Blueprint, request, current_app
+from flask import Blueprint, request, current_app, make_response
 from config.db import get_db
 from utils import json_resp, json_error, require_auth
+import json
 
 logger = logging.getLogger(__name__)
 cards_bp = Blueprint("cards", __name__)
@@ -98,7 +99,9 @@ def public_card_by_id(card_id):
                 (card["id"],),
             )
             card["links"] = cur.fetchall()
-        return json_resp(200, {"card": card})
+        resp = make_response(json_resp(200, {"card": card}))
+        resp.headers['Cache-Control'] = 'public, max-age=30'
+        return resp
     except Exception:
         logger.exception("public_card_by_id failed for card_id=%s", card_id)
         return json_error(500, "Failed to fetch card.")
@@ -132,7 +135,9 @@ def public_card(slug):
                 (card["id"],),
             )
             card["links"] = cur.fetchall()
-        return json_resp(200, {"card": card})
+        resp = make_response(json_resp(200, {"card": card}))
+        resp.headers['Cache-Control'] = 'public, max-age=30'
+        return resp
     except Exception:
         logger.exception("public_card failed for slug=%s", slug)
         return json_error(500, "Failed to fetch card.")
