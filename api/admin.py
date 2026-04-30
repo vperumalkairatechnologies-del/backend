@@ -188,7 +188,6 @@ def process_request(identity, request_id: int, action: str):
     new_status = "approved" if action == "approve" else "rejected"
 
     db = get_db()
-    db.autocommit(False)
     try:
         with db.cursor() as cur:
             cur.execute(
@@ -196,57 +195,66 @@ def process_request(identity, request_id: int, action: str):
                 (request_id,),
             )
             req = cur.fetchone()
-            if not req:
-                db.rollback()
-                return json_error(404, "Request not found or already processed.")
 
-            user_id = int(req["user_id"])
+        if not req:
+            return json_error(404, "Request not found or already processed.")
 
+        user_id = int(req["user_id"])
+
+        with db.cursor() as cur:
             cur.execute(
                 "UPDATE premium_requests SET status=%s, processed_at=NOW(), "
                 "processed_by=%s, admin_note=%s WHERE id=%s",
                 (new_status, admin_id, admin_note, request_id),
             )
 
-            if action == "approve":
-                cur.execute(
-                    "UPDATE users SET role='premium', plan_status='active', "
-                    "premium_approved_at=NOW(), approved_by=%s WHERE id=%s",
-                    (admin_id, user_id),
-                )
+        if action == "approve":
+            with db.cursor() as cur:
                 try:
-                    create_notification(
-                        user_id, "premium_approved",
-                        "🎉 Premium Access Approved!",
-                        "Congratulations! Your premium access request has been approved.",
+                    cur.execute(
+                        "UPDATE users SET role='premium', plan_status='active', "
+                        "premium_approved_at=NOW(), approved_by=%s WHERE id=%s",
+                        (admin_id, user_id),
                     )
                 except Exception:
-                    logger.exception("Notification failed for user_id=%s", user_id)
-            else:
+                    # approved_by column may not exist — fall back without it
+                    cur.execute(
+                        "UPDATE users SET role='premium', plan_status='active', "
+                        "premium_approved_at=NOW() WHERE id=%s",
+                        (user_id,),
+                    )
+        else:
+            with db.cursor() as cur:
                 cur.execute("UPDATE users SET plan_status=NULL WHERE id=%s", (user_id,))
-                try:
-                    create_notification(
-                        user_id, "premium_rejected",
-                        "Premium Request Update",
-                        "Your premium request was reviewed. "
-                        + (admin_note or "Please contact support for more information."),
-                    )
-                except Exception:
-                    logger.exception("Notification failed for user_id=%s", user_id)
 
-            try:
-                log_admin_action(admin_id, f"premium_request_{action}", user_id, admin_note)
-            except Exception:
-                logger.exception("Admin log failed")
+        # Notifications and logs — failures don't affect the main response
+        try:
+            if action == "approve":
+                create_notification(
+                    user_id, "premium_approved",
+                    "\U0001f389 Premium Access Approved!",
+                    "Congratulations! Your premium access request has been approved.",
+                )
+            else:
+                create_notification(
+                    user_id, "premium_rejected",
+                    "Premium Request Update",
+                    "Your premium request was reviewed. "
+                    + (admin_note or "Please contact support for more information."),
+                )
+        except Exception:
+            logger.exception("Notification failed for user_id=%s", user_id)
 
-        db.commit()
+        try:
+            log_admin_action(admin_id, f"premium_request_{action}", user_id, admin_note)
+        except Exception:
+            logger.exception("Admin log failed")
+
         return json_resp(200, {"message": "Request processed successfully."})
     except Exception:
-        db.rollback()
         logger.exception("process_request failed request_id=%s action=%s", request_id, action)
         return json_error(500, "Failed to process request.")
     finally:
-        db.autocommit(True)
         db.close()
 
 

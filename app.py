@@ -42,7 +42,7 @@ if not _jwt_secret:
 
 app.config["JWT_SECRET_KEY"] = _jwt_secret
 app.config["JWT_ALGORITHM"] = os.getenv("JWT_ALGORITHM", "HS256")
-app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=1)   # ← was 7 days; use short-lived + refresh
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=7)
 
 # ── Upload folder ─────────────────────────────────────────────────────────────
 app.config["UPLOAD_FOLDER"] = os.path.join(

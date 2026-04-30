@@ -30,6 +30,38 @@ def _generate_slug(name: str, db) -> str:
     return slug
 
 
+@auth_bp.route("/me", methods=["GET"])
+def me():
+    from utils import require_auth
+    @require_auth
+    def _inner(identity):
+        db = get_db()
+        try:
+            with db.cursor() as cur:
+                cur.execute(
+                    "SELECT id, name, email, slug, role, plan_status "
+                    "FROM users WHERE id = %s AND is_active = 1",
+                    (identity["user_id"],),
+                )
+                user = cur.fetchone()
+            if not user:
+                return json_error(404, "User not found.")
+            return json_resp(200, {"user": {
+                "id":          user["id"],
+                "name":        user["name"],
+                "email":       user["email"],
+                "slug":        user["slug"],
+                "role":        user["role"],
+                "plan_status": user["plan_status"],
+            }})
+        except Exception:
+            logger.exception("me failed")
+            return json_error(500, "Failed to fetch user.")
+        finally:
+            db.close()
+    return _inner()
+
+
 @auth_bp.route("/register", methods=["POST"])
 def register():
     body  = request.get_json(silent=True) or {}
