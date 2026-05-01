@@ -18,6 +18,7 @@ from api.vcf import vcf_bp
 from api.analytics import analytics_bp
 from api.premium import premium_bp
 from api.admin import admin_bp
+from api.payments import payments_bp
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -103,6 +104,7 @@ app.register_blueprint(vcf_bp,        url_prefix="/api/vcf")
 app.register_blueprint(analytics_bp,  url_prefix="/api/analytics")
 app.register_blueprint(premium_bp,    url_prefix="/api/premium")
 app.register_blueprint(admin_bp,      url_prefix="/api/admin")
+app.register_blueprint(payments_bp,   url_prefix="/api/pay")
 
 # ── Auto-migrate: add max_cards column if missing ────────────────────────────
 def _run_migrations():
@@ -110,13 +112,44 @@ def _run_migrations():
         from config.db import get_db
         db = get_db()
         with db.cursor() as cur:
+            # max_cards column
             cur.execute("""
                 SELECT COUNT(*) as cnt FROM information_schema.COLUMNS
                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'max_cards'
             """)
             if cur.fetchone()["cnt"] == 0:
                 cur.execute("ALTER TABLE users ADD COLUMN max_cards INT DEFAULT NULL")
-                logger.info("Migration: added max_cards column to users table")
+                logger.info("Migration: added max_cards column")
+            # plan_expires_at column
+            cur.execute("""
+                SELECT COUNT(*) as cnt FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'plan_expires_at'
+            """)
+            if cur.fetchone()["cnt"] == 0:
+                cur.execute("ALTER TABLE users ADD COLUMN plan_expires_at DATETIME DEFAULT NULL")
+                logger.info("Migration: added plan_expires_at column")
+            # payments table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS payments (
+                  id INT AUTO_INCREMENT PRIMARY KEY,
+                  user_id INT NOT NULL,
+                  plan ENUM('pro','advanced') NOT NULL,
+                  amount INT NOT NULL,
+                  currency VARCHAR(10) DEFAULT 'INR',
+                  phonepe_order_id VARCHAR(100) DEFAULT NULL,
+                  phonepe_txn_id VARCHAR(100) DEFAULT NULL,
+                  status ENUM('pending','success','failed','refunded') DEFAULT 'pending',
+                  created_at DATETIME DEFAULT NOW(),
+                  updated_at DATETIME DEFAULT NOW() ON UPDATE NOW(),
+                  INDEX idx_user_id (user_id),
+                  INDEX idx_phonepe_order (phonepe_order_id)
+                )
+            """)
+            logger.info("Migration: payments table ready")
+            # Migrate old role values
+            cur.execute("UPDATE users SET role='basic' WHERE role IN ('free','user')")
+            cur.execute("UPDATE users SET role='pro'   WHERE role='premium'")
+            logger.info("Migration: role values updated")
         db.close()
     except Exception as e:
         logger.warning("Migration failed (non-fatal): %s", e)

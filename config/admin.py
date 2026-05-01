@@ -7,13 +7,17 @@ logger = logging.getLogger(__name__)
 
 
 def is_premium_user(identity: Dict[str, Any]) -> bool:
-    """Check if a user has premium access based on their role."""
+    """Check if user has pro or above plan."""
     try:
         role = identity.get("role", "").lower()
-        return role == "premium"
+        return role in ('pro', 'advanced', 'premium')
     except Exception:
-        logger.exception("Error checking premium status for identity: %s", identity)
         return False
+
+
+def get_plan_level(role: str) -> int:
+    levels = {'basic': 0, 'free': 0, 'user': 0, 'pro': 1, 'premium': 1, 'advanced': 2, 'admin': 99}
+    return levels.get(role or 'basic', 0)
 
 
 def get_user_feature_limits(identity: Dict[str, Any]) -> Dict[str, Any]:

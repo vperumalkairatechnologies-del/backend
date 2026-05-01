@@ -88,20 +88,20 @@ def register():
 
             cur.execute(
                 "INSERT INTO users (name, email, password, slug, role, plan_status) "
-                "VALUES (%s, %s, %s, %s, 'free', NULL)",
+                "VALUES (%s, %s, %s, %s, 'basic', NULL)",
                 (name, email, hashed, slug),
             )
             user_id = cur.lastrowid
 
         token = create_access_token(
             identity=str(user_id),
-            additional_claims={"slug": slug, "role": "free", "plan_status": None}
+            additional_claims={"slug": slug, "role": "basic", "plan_status": None}
         )
         return json_resp(201, {
             "token": token,
             "user": {
                 "id": user_id, "name": name, "email": email,
-                "slug": slug, "role": "free", "plan_status": None,
+                "slug": slug, "role": "basic", "plan_status": None,
             },
         })
     except Exception:
@@ -156,7 +156,7 @@ def login():
             identity=str(user["id"]),
             additional_claims={
                 "slug":        user["slug"],
-                "role":        user.get("role", "free"),
+                "role":        user.get("role", "basic"),
                 "plan_status": user.get("plan_status"),
             }
         )
@@ -167,7 +167,7 @@ def login():
                 "name":        user["name"],
                 "email":       user["email"],
                 "slug":        user["slug"],
-                "role":        user.get("role", "free"),
+                "role":        user.get("role", "basic"),
                 "plan_status": user.get("plan_status"),
             },
         })
@@ -208,18 +208,18 @@ def google_login():
             with db.cursor() as cur:
                 cur.execute(
                     "INSERT INTO users (name, email, password, slug, role, plan_status) "
-                    "VALUES (%s, %s, %s, %s, 'free', NULL)",
+                    "VALUES (%s, %s, %s, %s, 'basic', NULL)",
                     (name, email, hashed, slug),
                 )
                 user_id = cur.lastrowid
             user = {"id": user_id, "name": name, "email": email,
-                    "slug": slug, "role": "free", "plan_status": None}
+                    "slug": slug, "role": "basic", "plan_status": None}
 
         token_jwt = create_access_token(
             identity=str(user["id"]),
             additional_claims={
                 "slug":        user["slug"],
-                "role":        user.get("role", "free"),
+                "role":        user.get("role", "basic"),
                 "plan_status": user.get("plan_status"),
             }
         )
@@ -230,7 +230,7 @@ def google_login():
                 "name":        user["name"],
                 "email":       user["email"],
                 "slug":        user["slug"],
-                "role":        user.get("role", "free"),
+                "role":        user.get("role", "basic"),
                 "plan_status": user.get("plan_status"),
             },
         })
