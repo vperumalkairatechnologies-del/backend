@@ -6,6 +6,7 @@ import uuid
 
 from flask import Blueprint, request, current_app, make_response
 from config.db import get_db
+from config.admin import get_plan_limits, can_access_feature
 from utils import json_resp, json_error, require_auth
 import json
 
@@ -56,23 +57,29 @@ def _get_card_with_links(db, card_id: int):
     return card
 
 
-def _save_links(db, card_id: int, links: list):
+def _save_links(db, card_id: int, links: list, max_social: int = -1):
+    """Save links, enforcing social link limit for non-meta links."""
+    SOCIAL_TYPES = {'twitter','instagram','threads','linkedin','facebook','youtube',
+                    'snapchat','tiktok','twitch','yelp','whatsapp','signal','discord',
+                    'skype','telegram','github','calendly'}
     with db.cursor() as cur:
         cur.execute("DELETE FROM card_links WHERE card_id = %s", (card_id,))
+        social_count = 0
         for i, link in enumerate(links):
-            url = str(link.get("url", ""))[:500].strip()
-            if url:
-                cur.execute(
-                    "INSERT INTO card_links (card_id, type, label, url, sort_order) "
-                    "VALUES (%s, %s, %s, %s, %s)",
-                    (
-                        card_id,
-                        str(link.get("type", ""))[:30].strip(),
-                        str(link.get("label", ""))[:100].strip(),
-                        url,
-                        i,
-                    ),
-                )
+            url  = str(link.get("url", ""))[:500].strip()
+            ltype = str(link.get("type", ""))[:30].strip()
+            if not url:
+                continue
+            # Enforce social link limit (skip meta_ links from counting)
+            if max_social != -1 and ltype in SOCIAL_TYPES:
+                if social_count >= max_social:
+                    continue  # silently drop excess social links
+                social_count += 1
+            cur.execute(
+                "INSERT INTO card_links (card_id, type, label, url, sort_order) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (card_id, ltype, str(link.get("label", ""))[:100].strip(), url, i),
+            )
 
 
 # ── Public: GET /api/cards/public/id/<card_id> ──────────────────────────────
@@ -249,17 +256,25 @@ def create_card(identity):
     body = request.get_json(silent=True) or {}
     db = get_db()
     try:
-        # Check user's card limit based on their plan
+        # Check user's card limit based on plan
         with db.cursor() as cur:
-            cur.execute("SELECT role, COALESCE(max_cards, CASE WHEN role='admin' THEN 50 WHEN role='premium' THEN 10 ELSE 1 END) as max_cards FROM users WHERE id = %s", (user_id,))
+            cur.execute(
+                "SELECT role, COALESCE(max_cards, -2) as max_cards_override FROM users WHERE id = %s",
+                (user_id,)
+            )
             user = cur.fetchone()
 
+        role = user["role"] if user else "basic"
+        limits = get_plan_limits(role)
+        # Per-user override takes priority if set (not -2 sentinel)
+        max_cards = user["max_cards_override"] if user["max_cards_override"] != -2 else limits["max_cards"]
+
+        with db.cursor() as cur:
             cur.execute("SELECT COUNT(*) as count FROM cards WHERE user_id = %s", (user_id,))
             card_count = cur.fetchone()["count"]
 
-            max_cards = int(user["max_cards"]) if user else 1
-            if card_count >= max_cards:
-                return json_error(429, f"Card limit reached. You can have maximum {max_cards} cards.")
+        if max_cards != -1 and card_count >= max_cards:
+            return json_error(429, f"Card limit reached. Your {role} plan allows maximum {max_cards} card(s). Upgrade to create more.")
         
         with db.cursor() as cur:
             cur.execute(
@@ -276,7 +291,7 @@ def create_card(identity):
             )
             card_id = cur.lastrowid
         if body.get("links") and isinstance(body["links"], list):
-            _save_links(db, card_id, body["links"])
+            _save_links(db, card_id, body["links"], max_social=limits["max_social_links"])
         card = _get_card_with_links(db, card_id)
         return json_resp(201, {"card": card})
     except Exception:
@@ -295,6 +310,12 @@ def update_card(identity, card_id: int):
     db = get_db()
     try:
         with db.cursor() as cur:
+            cur.execute("SELECT role FROM users WHERE id=%s", (user_id,))
+            user_row = cur.fetchone()
+        role   = user_row["role"] if user_row else "basic"
+        limits = get_plan_limits(role)
+
+        with db.cursor() as cur:
             cur.execute(
                 "SELECT id FROM cards WHERE id = %s AND user_id = %s",
                 (card_id, user_id),
@@ -310,12 +331,11 @@ def update_card(identity, card_id: int):
                     body.get("bio", "").strip(),
                     body.get("photo", "").strip(),
                     body.get("theme", "default").strip(),
-                    card_id,
-                    user_id,
+                    card_id, user_id,
                 ),
             )
         if "links" in body and isinstance(body["links"], list):
-            _save_links(db, card_id, body["links"])
+            _save_links(db, card_id, body["links"], max_social=limits["max_social_links"])
         card = _get_card_with_links(db, card_id)
         return json_resp(200, {"card": card})
     except Exception:

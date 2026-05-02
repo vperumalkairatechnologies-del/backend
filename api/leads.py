@@ -11,6 +11,7 @@ import re
 
 from flask import Blueprint, request
 from config.db import get_db
+from config.admin import can_access_feature
 from utils import json_resp, json_error
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,12 @@ def capture_lead():
             card = cur.fetchone()
             if not card:
                 return json_error(404, "Card not found.")
+
+            # Check if card owner has lead_capture feature (Pro+)
+            cur.execute("SELECT role FROM users WHERE id=(SELECT user_id FROM cards WHERE id=%s)", (card["id"],))
+            owner = cur.fetchone()
+            if owner and not can_access_feature(owner["role"], "lead_capture"):
+                return json_error(403, "Lead capture is not available on this card.")
 
             cur.execute(
                 """INSERT INTO card_leads
