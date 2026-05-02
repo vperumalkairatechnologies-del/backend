@@ -184,10 +184,10 @@ def _run_migrations():
                 )
             """)
             logger.info("Migration: billing tables ready")
-            # Migrate old role values
+            # Migrate old role values — run every startup to catch any stragglers
             cur.execute("UPDATE users SET role='basic' WHERE role IN ('free','user')")
             cur.execute("UPDATE users SET role='pro'   WHERE role='premium'")
-            logger.info("Migration: role values updated")
+            logger.info("Migration: role values normalized")
         db.close()
     except Exception as e:
         logger.warning("Migration failed (non-fatal): %s", e)

@@ -61,12 +61,17 @@ PLAN_LIMITS = {
 
 
 def get_plan_level(role: str) -> int:
-    return PLAN_LEVELS.get(role or 'basic', 0)
+    role_map = {'free': 'basic', 'user': 'basic', 'premium': 'pro'}
+    normalized = role_map.get(role or 'basic', role or 'basic')
+    return PLAN_LEVELS.get(normalized, 0)
 
 
 def get_plan_limits(role: str) -> dict:
-    """Return plan limits for a given role."""
-    return PLAN_LIMITS.get(role or 'basic', PLAN_LIMITS['basic'])
+    """Return plan limits for a given role. Handles legacy role names."""
+    # Normalize legacy role names
+    role_map = {'free': 'basic', 'user': 'basic', 'premium': 'pro'}
+    normalized = role_map.get(role or 'basic', role or 'basic')
+    return PLAN_LIMITS.get(normalized, PLAN_LIMITS['basic'])
 
 
 def is_premium_user(identity: Dict[str, Any]) -> bool:

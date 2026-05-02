@@ -96,11 +96,10 @@ def initiate_payment(identity):
     body    = request.get_json(silent=True) or {}
     plan    = body.get("plan", "").lower()
     coupon_code = body.get("coupon", "").strip().upper()
+    use_dummy = body.get("dummy", False)  # dummy mode flag
 
     if plan not in PLANS:
         return json_error(400, "Invalid plan. Choose 'pro' or 'advanced'.")
-    if not MERCHANT_ID or not MERCHANT_KEY:
-        return json_error(500, "Payment gateway not configured.")
 
     plan_info = PLANS[plan]
     amount    = plan_info["amount"]
@@ -144,25 +143,28 @@ def initiate_payment(identity):
                 "VALUES (%s,%s,%s,%s,'pending',%s,%s)",
                 (user_id, plan, amount, order_id, coupon_id, discount),
             )
+            payment_id = cur.lastrowid
 
-        # If 100% discount — activate immediately without PhonePe
-        if amount == 0:
+        # ── DUMMY MODE or 100% discount — activate immediately ──
+        if use_dummy or amount == 0:
             with db.cursor() as cur:
-                cur.execute("SELECT id FROM payments WHERE phonepe_order_id=%s", (order_id,))
-                pay = cur.fetchone()
-            with db.cursor() as cur:
-                cur.execute("UPDATE payments SET status='success' WHERE phonepe_order_id=%s", (order_id,))
+                cur.execute("UPDATE payments SET status='success' WHERE id=%s", (payment_id,))
             if coupon_id:
                 with db.cursor() as cur:
                     cur.execute("UPDATE coupons SET used_count=used_count+1 WHERE id=%s", (coupon_id,))
-            _activate_plan(db, user_id, plan, pay["id"])
-            return json_resp(200, {"free": True, "order_id": order_id})
+            _activate_plan(db, user_id, plan, payment_id)
+            logger.info("Dummy payment activated user_id=%s plan=%s order=%s", user_id, plan, order_id)
+            return json_resp(200, {"dummy": True, "order_id": order_id, "plan": plan})
 
     except Exception:
         logger.exception("initiate_payment DB error user_id=%s", user_id)
         return json_error(500, "Failed to create payment record.")
     finally:
         db.close()
+
+    # ── Real PhonePe flow ──
+    if not MERCHANT_ID or not MERCHANT_KEY:
+        return json_error(500, "Payment gateway not configured. Use dummy=true for testing.")
 
     # Build PhonePe payload
     payload = {
