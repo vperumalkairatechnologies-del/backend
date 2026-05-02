@@ -139,13 +139,51 @@ def _run_migrations():
                   phonepe_order_id VARCHAR(100) DEFAULT NULL,
                   phonepe_txn_id VARCHAR(100) DEFAULT NULL,
                   status ENUM('pending','success','failed','refunded') DEFAULT 'pending',
+                  discount_amount INT DEFAULT 0,
+                  coupon_id INT DEFAULT NULL,
+                  subscription_id INT DEFAULT NULL,
                   created_at DATETIME DEFAULT NOW(),
                   updated_at DATETIME DEFAULT NOW() ON UPDATE NOW(),
                   INDEX idx_user_id (user_id),
                   INDEX idx_phonepe_order (phonepe_order_id)
                 )
             """)
-            logger.info("Migration: payments table ready")
+            # subscriptions table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS subscriptions (
+                  id INT AUTO_INCREMENT PRIMARY KEY,
+                  user_id INT NOT NULL,
+                  plan ENUM('basic','pro','advanced') NOT NULL DEFAULT 'basic',
+                  status ENUM('active','expired','cancelled','pending') NOT NULL DEFAULT 'pending',
+                  payment_id INT DEFAULT NULL,
+                  start_date DATETIME DEFAULT NOW(),
+                  end_date DATETIME DEFAULT NULL,
+                  cancelled_at DATETIME DEFAULT NULL,
+                  admin_note VARCHAR(255) DEFAULT NULL,
+                  created_at DATETIME DEFAULT NOW(),
+                  updated_at DATETIME DEFAULT NOW() ON UPDATE NOW(),
+                  INDEX idx_user_id (user_id),
+                  INDEX idx_end_date (end_date)
+                )
+            """)
+            # coupons table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS coupons (
+                  id INT AUTO_INCREMENT PRIMARY KEY,
+                  code VARCHAR(50) NOT NULL UNIQUE,
+                  discount_type ENUM('percent','fixed') NOT NULL DEFAULT 'percent',
+                  discount_value INT NOT NULL,
+                  max_uses INT DEFAULT NULL,
+                  used_count INT DEFAULT 0,
+                  valid_from DATETIME DEFAULT NOW(),
+                  valid_until DATETIME DEFAULT NULL,
+                  applicable_plan ENUM('pro','advanced','all') DEFAULT 'all',
+                  is_active TINYINT(1) DEFAULT 1,
+                  created_at DATETIME DEFAULT NOW(),
+                  INDEX idx_code (code)
+                )
+            """)
+            logger.info("Migration: billing tables ready")
             # Migrate old role values
             cur.execute("UPDATE users SET role='basic' WHERE role IN ('free','user')")
             cur.execute("UPDATE users SET role='pro'   WHERE role='premium'")
