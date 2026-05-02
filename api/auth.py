@@ -39,7 +39,7 @@ def me():
         try:
             with db.cursor() as cur:
                 cur.execute(
-                    "SELECT id, name, email, slug, role, plan_status "
+                    "SELECT id, name, email, slug, role, plan_status, plan_expires_at "
                     "FROM users WHERE id = %s AND is_active = 1",
                     (identity["user_id"],),
                 )
@@ -47,12 +47,13 @@ def me():
             if not user:
                 return json_error(404, "User not found.")
             return json_resp(200, {"user": {
-                "id":          user["id"],
-                "name":        user["name"],
-                "email":       user["email"],
-                "slug":        user["slug"],
-                "role":        user["role"],
-                "plan_status": user["plan_status"],
+                "id":             user["id"],
+                "name":           user["name"],
+                "email":          user["email"],
+                "slug":           user["slug"],
+                "role":           user["role"],
+                "plan_status":    user["plan_status"],
+                "plan_expires_at": str(user["plan_expires_at"]) if user["plan_expires_at"] else None,
             }})
         except Exception:
             logger.exception("me failed")
@@ -124,7 +125,7 @@ def login():
     try:
         with db.cursor() as cur:
             cur.execute(
-                "SELECT id, name, email, password, slug, role, plan_status "
+                "SELECT id, name, email, password, slug, role, plan_status, plan_expires_at "
                 "FROM users WHERE email = %s AND is_active = 1",
                 (email,),
             )
@@ -163,12 +164,13 @@ def login():
         return json_resp(200, {
             "token": token,
             "user": {
-                "id":          user["id"],
-                "name":        user["name"],
-                "email":       user["email"],
-                "slug":        user["slug"],
-                "role":        user.get("role", "basic"),
-                "plan_status": user.get("plan_status"),
+                "id":             user["id"],
+                "name":           user["name"],
+                "email":          user["email"],
+                "slug":           user["slug"],
+                "role":           user.get("role", "basic"),
+                "plan_status":    user.get("plan_status"),
+                "plan_expires_at": str(user["plan_expires_at"]) if user.get("plan_expires_at") else None,
             },
         })
     except Exception:
